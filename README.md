@@ -24,6 +24,7 @@
 - Xuất WAV PCM mono, 44,1 kHz; các khoảng lặng theo phụ đề được giữ.
 - Nếu lời đọc dài hơn khoảng phụ đề hoặc các câu bị chồng lấn, audio được nối liên tiếp thay vì cắt lời. Khi đó âm thanh không thể khớp chính xác với mọi mốc thời gian phụ đề.
 - Mỗi yêu cầu gửi tới API đồng bộ Vbee giới hạn 300 ký tự. Nếu gặp lỗi 401, kiểm tra App ID/token và thời hạn token.
+- Danh sách giọng được lọc theo `voiceOwnership=VBEE` và `languageCode=vi-VN`, tự tải tiếp các trang theo con trỏ Vbee; mã giọng hiển thị ngay cạnh tên và có thể sao chép bằng nút **Sao chép ID**.
 - Chọn **Xóa token** hoặc đóng ứng dụng để xóa thông tin khỏi phiên. Thu hồi token trong Vbee Studio để chấm dứt hiệu lực.
 - Tệp phát hành portable hiện chưa có chữ ký số Authenticode; Windows có thể hiện cảnh báo nhà phát hành khi mở lần đầu.
 
@@ -31,4 +32,4 @@
 
 Cần .NET 8 SDK trên Windows. Chạy `build.cmd`; tệp thực thi và hướng dẫn sẽ xuất hiện trong `dist\win-x64`, kèm gói ZIP trong thư mục dự án.
 
-**Kiểm thử:** bản phát hành được build thành công. Giao diện và API chưa được kiểm tra trực tiếp trong môi trường build vì Windows Application Control đã chặn chạy assembly tự build.
+**Kiểm thử:** bản phát hành được build thành công. Giao diện và API (bao gồm danh sách giọng cần App ID/token hợp lệ) chưa được kiểm tra trực tiếp trong môi trường build vì Windows Application Control đã chặn chạy assembly tự build.

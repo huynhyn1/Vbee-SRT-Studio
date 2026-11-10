@@ -25,8 +25,9 @@ internal static class Program
 internal sealed record SubtitleCue(int Index, TimeSpan Start, TimeSpan End, string Text);
 internal sealed record Voice(string Name, string Code)
 {
-    public override string ToString() => Name;
+    public override string ToString() => $"{Name}  ·  {Code}";
 }
+internal sealed record VoiceCatalogPage(List<Voice> Voices, bool HasNextPage, string? NextCursor);
 
 internal sealed class MainForm : Form
 {
@@ -40,9 +41,11 @@ internal sealed class MainForm : Form
     private readonly Button loadVoicesButton = new() { Text = "Tải danh sách giọng", AutoSize = true };
     private readonly Button clearTokenButton = new() { Text = "Xóa token", AutoSize = true };
     private readonly ComboBox voiceBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat };
+    private readonly Button copyVoiceCodeButton = new() { Text = "Sao chép ID", AutoSize = true, Enabled = false };
     private readonly Button loadSrtButton = new() { Text = "Mở phụ đề SRT", AutoSize = true };
     private readonly Label srtLabel = new() { Text = "Chưa chọn tệp — hỗ trợ SRT, UTF-8 và tiếng Việt", AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
     private readonly ListBox previewList = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true, BorderStyle = BorderStyle.None, IntegralHeight = false };
+    private readonly Label previewCountLabel = new() { Text = "Chưa chọn phụ đề", Dock = DockStyle.Fill, ForeColor = Muted, TextAlign = System.Drawing.ContentAlignment.MiddleRight };
     private readonly NumericUpDown speedBox = new()
     {
         Minimum = 0.25m,
@@ -57,7 +60,7 @@ internal sealed class MainForm : Form
     private readonly Button generateButton = new() { Text = "Tạo file WAV", AutoSize = true, Enabled = false };
     private readonly Button cancelButton = new() { Text = "Hủy", AutoSize = true, Enabled = false };
     private readonly ProgressBar progressBar = new() { Minimum = 0, Maximum = 100, Value = 0, Dock = DockStyle.Fill };
-    private readonly Label statusLabel = new() { Text = "Chọn SRT và nhập thông tin ứng dụng Vbee.", AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
+    private readonly Label statusLabel = new() { Text = "Chọn SRT và nhập thông tin ứng dụng Vbee.", Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
     private readonly HttpClient httpClient = new(new SocketsHttpHandler { ConnectTimeout = TimeSpan.FromSeconds(30) })
     {
         Timeout = Timeout.InfiniteTimeSpan
@@ -70,9 +73,9 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "Vbee SRT Studio";
-        Width = 980;
-        Height = 790;
-        MinimumSize = new System.Drawing.Size(820, 680);
+        Width = 1080;
+        Height = 940;
+        MinimumSize = new System.Drawing.Size(820, 640);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Canvas;
         ForeColor = Ink;
@@ -103,25 +106,44 @@ internal sealed class MainForm : Form
         appIdBox.TextChanged += (_, _) => UpdateGenerateEnabled();
         tokenBox.TextChanged += (_, _) => UpdateGenerateEnabled();
         voiceBox.SelectedIndexChanged += (_, _) => UpdateGenerateEnabled();
+        voiceBox.SelectedIndexChanged += (_, _) => copyVoiceCodeButton.Enabled = voiceBox.SelectedItem is Voice;
+        copyVoiceCodeButton.Click += (_, _) =>
+        {
+            if (voiceBox.SelectedItem is Voice voice)
+            {
+                Clipboard.SetText(voice.Code);
+                SetStatus($"Đã sao chép ID giọng: {voice.Code}", success: true);
+            }
+        };
     }
 
     private void BuildLayout()
     {
-        var root = new TableLayoutPanel
+        var scrollArea = new Panel
         {
             Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = Canvas
+        };
+        var root = new TableLayoutPanel
+        {
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            Dock = DockStyle.Top,
             Padding = new Padding(22),
             ColumnCount = 1,
             RowCount = 6,
             BackColor = Canvas
         };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
-        Controls.Add(root);
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 162));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 162));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
+        scrollArea.Controls.Add(root);
+        Controls.Add(scrollArea);
 
         var header = new Panel { Dock = DockStyle.Fill, BackColor = Ink, Padding = new Padding(20, 10, 20, 10) };
         var headerGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ink };
@@ -168,8 +190,8 @@ internal sealed class MainForm : Form
         credentials.RowCount = 4;
         credentials.RowStyles.Clear();
         credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
-        credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         credentials.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         credentials.SetColumnSpan(credentials.GetControlFromPosition(0, 0)!, 3);
         AddField(credentials, 1, "App ID", appIdBox);
@@ -220,36 +242,31 @@ internal sealed class MainForm : Form
             Font = new System.Drawing.Font("Segoe UI Semibold", 10F, System.Drawing.FontStyle.Bold),
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         }, 0, 0);
-        previewHeader.Controls.Add(new Label
-        {
-            Text = "Tối đa 2.000 dòng hiển thị",
-            Dock = DockStyle.Fill,
-            ForeColor = Muted,
-            TextAlign = System.Drawing.ContentAlignment.MiddleRight
-        }, 1, 0);
+        previewHeader.Controls.Add(previewCountLabel, 1, 0);
         preview.Controls.Add(previewHeader, 0, 1);
         preview.SetColumnSpan(previewHeader, 2);
         preview.Controls.Add(previewList, 0, 2);
         preview.SetColumnSpan(previewList, 2);
+        previewList.Items.Add("Chưa có phụ đề. Chọn “Mở phụ đề SRT” để xem trước nội dung.");
         root.Controls.Add(preview, 0, 3);
 
         var options = CreateCard("03   THIẾT LẬP ÂM THANH");
-        options.ColumnCount = 6;
+        options.ColumnCount = 5;
         options.RowCount = 4;
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
         options.RowStyles.Clear();
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-        options.SetColumnSpan(options.GetControlFromPosition(0, 0)!, 6);
+        options.SetColumnSpan(options.GetControlFromPosition(0, 0)!, 5);
         AddField(options, 1, "Giọng", voiceBox);
-        AddField(options, 1, "Tốc độ", speedBox, 2);
+        options.Controls.Add(copyVoiceCodeButton, 2, 1);
+        AddField(options, 1, "Tốc độ", speedBox, 3);
         options.Controls.Add(new Label
         {
             Text = "Tệp WAV",
@@ -258,8 +275,8 @@ internal sealed class MainForm : Form
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         }, 0, 2);
         options.Controls.Add(outputBox, 1, 2);
-        options.SetColumnSpan(outputBox, 4);
-        options.Controls.Add(outputButton, 5, 2);
+        options.SetColumnSpan(outputBox, 3);
+        options.Controls.Add(outputButton, 4, 2);
         var timingNote = new Label
         {
             Text = "Khoảng lặng theo SRT; câu đọc dài hoặc chồng lấn được nối tiếp, không cắt lời.",
@@ -268,7 +285,7 @@ internal sealed class MainForm : Form
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         };
         options.Controls.Add(timingNote, 0, 3);
-        options.SetColumnSpan(timingNote, 6);
+        options.SetColumnSpan(timingNote, 5);
         root.Controls.Add(options, 0, 4);
 
         var actions = CreateCard("");
@@ -279,8 +296,8 @@ internal sealed class MainForm : Form
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         actions.RowStyles.Clear();
-        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         actions.Controls.Add(progressBar, 0, 0);
         actions.Controls.Add(generateButton, 1, 0);
         actions.Controls.Add(cancelButton, 2, 0);
@@ -292,6 +309,7 @@ internal sealed class MainForm : Form
         StyleButton(clearTokenButton, false);
         StyleButton(loadSrtButton, true);
         StyleButton(outputButton, false);
+        StyleButton(copyVoiceCodeButton, false);
         StyleButton(generateButton, true);
         StyleButton(cancelButton, false);
         progressBar.ForeColor = Accent;
@@ -377,6 +395,7 @@ internal sealed class MainForm : Form
             cues = SrtParser.ParseFile(dialog.FileName);
             srtPath = dialog.FileName;
             srtLabel.Text = $"{Path.GetFileName(dialog.FileName)} — {cues.Count:N0} đoạn";
+            previewCountLabel.Text = $"{cues.Count:N0} đoạn · tối đa 2.000 dòng";
             outputBox.Text = Path.Combine(Path.GetDirectoryName(dialog.FileName)!, Path.GetFileNameWithoutExtension(dialog.FileName) + "_voice.wav");
             previewList.BeginUpdate();
             previewList.Items.Clear();
@@ -393,6 +412,7 @@ internal sealed class MainForm : Form
             cues = [];
             srtPath = null;
             srtLabel.Text = "Không đọc được file SRT";
+            previewCountLabel.Text = "Không đọc được phụ đề";
             previewList.Items.Clear();
             SetStatus("Không đọc được file SRT: " + ex.Message, error: true);
             UpdateGenerateEnabled();
@@ -421,17 +441,35 @@ internal sealed class MainForm : Form
         SetStatus("Đang tải danh sách giọng đọc từ Vbee…");
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, "https://vbee.vn/api/public/v1/voices?languageCode=vi-VN");
-            AddAuthHeaders(request);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-            using var response = await httpClient.SendAsync(request, timeout.Token);
-            var body = await response.Content.ReadAsStringAsync(timeout.Token);
-            if (!response.IsSuccessStatusCode)
-                throw new VbeeApiException(FormatApiError(response.StatusCode, body));
+            var voices = new List<Voice>();
+            var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+            string? cursor = null;
+            var pageNumber = 1;
+            while (true)
+            {
+                SetStatus($"Đang tải danh sách giọng đọc từ Vbee (trang {pageNumber})…");
+                var url = "https://vbee.vn/api/public/v1/voices?voiceOwnership=VBEE&languageCode=vi-VN&limit=100";
+                if (cursor is not null)
+                    url += "&cursor=" + Uri.EscapeDataString(cursor);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                AddAuthHeaders(request);
+                using var response = await httpClient.SendAsync(request, timeout.Token);
+                var body = await response.Content.ReadAsStringAsync(timeout.Token);
+                if (!response.IsSuccessStatusCode)
+                    throw new VbeeApiException(FormatApiError(response.StatusCode, body));
 
-            var voices = VoiceParser.Parse(body);
+                var page = VoiceParser.ParsePage(body);
+                voices.AddRange(page.Voices);
+                if (!page.HasNextPage)
+                    break;
+                cursor = page.NextCursor!;
+                if (!seenCursors.Add(cursor))
+                    throw new InvalidDataException("Vbee lặp lại con trỏ phân trang; không thể tải đầy đủ danh sách giọng.");
+                pageNumber++;
+            }
             if (voices.Count == 0)
-                throw new InvalidDataException("Vbee không trả về danh sách giọng đọc tiếng Việt.");
+                throw new InvalidDataException("Danh mục giọng Vbee trả về rỗng. Kiểm tra quyền App, ngôn ngữ và bộ lọc giọng.");
             voiceBox.BeginUpdate();
             voiceBox.Items.Clear();
             foreach (var voice in voices)
@@ -444,6 +482,10 @@ internal sealed class MainForm : Form
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidDataException or VbeeApiException)
         {
             SetStatus(FriendlyError(ex), error: true);
+        }
+        catch (JsonException)
+        {
+            SetStatus("Phản hồi danh sách giọng của Vbee không đúng định dạng JSON. Hãy thử lại sau.", error: true);
         }
         finally
         {
@@ -601,6 +643,7 @@ internal sealed class MainForm : Form
         voiceBox.Enabled = !busy;
         speedBox.Enabled = !busy;
         clearTokenButton.Enabled = !busy;
+        copyVoiceCodeButton.Enabled = !busy && voiceBox.SelectedItem is Voice;
         UpdateGenerateEnabled();
     }
 
@@ -623,6 +666,12 @@ internal sealed class MainForm : Form
 
         if (status == HttpStatusCode.Unauthorized)
             return "Vbee từ chối xác thực (401). Kiểm tra App ID và token trong Vbee Studio; token có thể hết hạn.";
+        if (status == HttpStatusCode.Forbidden)
+            return "Vbee không cho phép tải danh sách giọng (403). Kiểm tra quyền API của ứng dụng trong Vbee Studio.";
+        if (status == HttpStatusCode.NotFound)
+            return "Vbee không tìm thấy danh mục giọng (404). Hãy cập nhật ứng dụng hoặc liên hệ hỗ trợ Vbee.";
+        if ((int)status == 429 || (message.Contains("rate", StringComparison.OrdinalIgnoreCase) && message.Contains("limit", StringComparison.OrdinalIgnoreCase)))
+            return "Vbee đang giới hạn yêu cầu. Chờ một chút rồi thử tải danh sách giọng lại.";
         if (string.IsNullOrWhiteSpace(message))
             message = "Vbee trả về lỗi HTTP " + (int)status + ".";
         message = message.Replace(tokenBox.Text.Trim(), "[token]", StringComparison.Ordinal)
@@ -753,28 +802,111 @@ internal static class TextChunker
 
 internal static class VoiceParser
 {
+    private static readonly string[] ArrayNames = ["voices", "voiceList", "items", "list", "records"];
+    private static readonly string[] WrapperNames = ["result", "data", "payload"];
+    private static readonly string[] CodeNames = ["voiceCode", "code", "voiceId", "id"];
+    private static readonly string[] NameNames = ["name", "voiceName", "displayName", "title"];
+
     public static List<Voice> Parse(string json)
+        => ParsePage(json).Voices;
+
+    public static VoiceCatalogPage ParsePage(string json)
     {
         using var document = JsonDocument.Parse(json);
-        var root = document.RootElement;
-        if (TryGet(root, "result", out var result) && result.ValueKind == JsonValueKind.Object)
-            root = result;
-        if (!TryGet(root, "voices", out var voices) || voices.ValueKind != JsonValueKind.Array)
-            throw new InvalidDataException("Không nhận diện được danh sách voices từ phản hồi Vbee.");
+        if (!TryFindVoiceArray(document.RootElement, 0, out var voices, out var container))
+            throw new InvalidDataException("Không nhận diện được mảng danh sách giọng trong phản hồi Vbee.");
 
         var parsed = new List<Voice>();
         foreach (var item in voices.EnumerateArray())
         {
-            if (!TryGet(item, "code", out var code) || code.ValueKind != JsonValueKind.String ||
-                !TryGet(item, "name", out var name) || name.ValueKind != JsonValueKind.String)
+            if (!TryGetString(item, CodeNames, out var code))
                 continue;
-            parsed.Add(new Voice(name.GetString()!, code.GetString()!));
+            var name = TryGetString(item, NameNames, out var parsedName) ? parsedName : code;
+            parsed.Add(new Voice(name, code));
         }
-        return parsed.OrderBy(voice => voice.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var sorted = parsed.OrderBy(voice => voice.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var hasNextPage = false;
+        string? nextCursor = null;
+        if (TryGet(container, "pagination", out var pagination))
+        {
+            if (TryGet(pagination, "has_next_page", out var hasNext) ||
+                TryGet(pagination, "hasNextPage", out hasNext))
+                hasNextPage = hasNext.ValueKind == JsonValueKind.True;
+            if (TryGet(pagination, "next_cursor", out var cursor) ||
+                TryGet(pagination, "nextCursor", out cursor))
+                nextCursor = cursor.ValueKind == JsonValueKind.String ? cursor.GetString() : null;
+        }
+        if (hasNextPage && string.IsNullOrWhiteSpace(nextCursor))
+            throw new InvalidDataException("Vbee báo còn trang giọng tiếp theo nhưng không cung cấp con trỏ phân trang.");
+        return new VoiceCatalogPage(sorted, hasNextPage, nextCursor);
+    }
+
+    private static bool TryFindVoiceArray(JsonElement element, int depth, out JsonElement voices, out JsonElement container)
+    {
+        voices = default;
+        container = default;
+        if (depth > 8)
+            return false;
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            if (element.GetArrayLength() == 0 || element.EnumerateArray().Any(IsVoiceObject))
+            {
+                voices = element;
+                container = default;
+                return true;
+            }
+            return false;
+        }
+        if (element.ValueKind != JsonValueKind.Object)
+            return false;
+
+        foreach (var propertyName in ArrayNames)
+        {
+            if (TryGet(element, propertyName, out var value) && value.ValueKind == JsonValueKind.Array)
+            {
+                voices = value;
+                container = element;
+                return true;
+            }
+        }
+        foreach (var propertyName in WrapperNames)
+        {
+            if (TryGet(element, propertyName, out var value) &&
+                TryFindVoiceArray(value, depth + 1, out voices, out container))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool IsVoiceObject(JsonElement element) =>
+        element.ValueKind == JsonValueKind.Object && TryGetString(element, CodeNames, out _);
+
+    private static bool TryGetString(JsonElement element, IEnumerable<string> names, out string value)
+    {
+        foreach (var name in names)
+        {
+            if (!TryGet(element, name, out var property))
+                continue;
+            if (property.ValueKind == JsonValueKind.String)
+                value = property.GetString() ?? "";
+            else if (property.ValueKind == JsonValueKind.Number)
+                value = property.GetRawText();
+            else
+                continue;
+            if (value.Length > 0)
+                return true;
+        }
+        value = "";
+        return false;
     }
 
     public static bool TryGet(JsonElement element, string propertyName, out JsonElement value)
     {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            value = default;
+            return false;
+        }
         foreach (var property in element.EnumerateObject())
         {
             if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
@@ -939,6 +1071,19 @@ internal static class SelfTests
         {
             var cues = SrtParser.Parse("1\r\n00:00:02,000 --> 00:00:03,250\r\n<i>Xin chào</i>\r\n\r\n2\r\n00:00:05.000 --> 00:00:06.000\r\nVbee\r\n");
             Assert(cues.Count == 2 && cues[0].Text == "Xin chào" && cues[1].Start == TimeSpan.FromSeconds(5), "SRT parse and timing");
+            var voices = VoiceParser.Parse("{\"result\":{\"voices\":[{\"voiceCode\":\"hn_female_001\",\"voiceName\":\"Giọng Hà Nội\"},{\"code\":\"sg_female_002\",\"name\":\"Giọng Sài Gòn\"}]}}");
+            Assert(voices.Count == 2 && voices.Any(voice => voice.Name == "Giọng Hà Nội" && voice.Code == "hn_female_001"),
+                "Vbee voice IDs and nested catalog shape");
+            Assert(VoiceParser.Parse("{\"data\":{\"items\":[{\"id\":\"v2\",\"displayName\":\"Giọng 2\"}]}}")
+                .Single().ToString() == "Giọng 2  ·  v2", "Voice ID display");
+            var voicePage = VoiceParser.ParsePage("{\"result\":{\"pagination\":{\"has_next_page\":true,\"next_cursor\":\"next-page\"},\"voices\":[{\"code\":\"v3\",\"name\":\"Giọng trang sau\"}]}}");
+            Assert(voicePage.HasNextPage && voicePage.NextCursor == "next-page" && voicePage.Voices.Single().Code == "v3",
+                "Vbee cursor pagination");
+            Assert(VoiceParser.Parse("{\"result\":{\"voices\":[]}}").Count == 0, "Empty voice catalog");
+            var malformedVoiceJsonRejected = false;
+            try { VoiceParser.Parse("{invalid"); }
+            catch (JsonException) { malformedVoiceJsonRejected = true; }
+            Assert(malformedVoiceJsonRejected, "Malformed voice catalog JSON");
             Assert(TextChunker.Split(new string('a', 301)).Select(s => s.Length).SequenceEqual(new[] { 300, 1 }), "300-character chunking");
             var wav = CreateSampleWav();
             var samples = WavReader.ReadMonoPcm16(wav, 8000);
@@ -948,7 +1093,7 @@ internal static class SelfTests
             WavWriter.WriteSamples(output, samples);
             WavWriter.WriteHeader(output, 8000, samples.Length);
             Assert(output.Length == 44 + samples.Length * 2, "WAV writer header");
-            Console.WriteLine("Self-tests passed: SRT parsing, chunking, WAV parsing/writing.");
+            Console.WriteLine("Self-tests passed: SRT parsing, voice catalog parsing/ID display, chunking, WAV parsing/writing.");
             return 0;
         }
         catch (Exception ex)
