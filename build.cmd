@@ -20,8 +20,11 @@ if errorlevel 1 exit /b %errorlevel%
 
 copy /Y "%~dp0README.md" "%~dp0dist\win-x64\README.md" >nul
 if errorlevel 1 exit /b %errorlevel%
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$files = @('%~dp0dist\win-x64\Vbee SRT Studio.exe','%~dp0dist\win-x64\README.md'); Compress-Archive -LiteralPath $files -DestinationPath '%~dp0Vbee-SRT-Studio-Windows-x64.zip' -CompressionLevel Optimal -Force"
+copy /Y "%~dp0VbeeSrtStudio.ps1" "%~dp0dist\win-x64\VbeeSrtStudio.ps1" >nul
+if errorlevel 1 exit /b %errorlevel%
+powershell.exe -NoProfile -Command "$files = @('%~dp0dist\win-x64\Vbee SRT Studio.exe','%~dp0dist\win-x64\README.md','%~dp0dist\win-x64\VbeeSrtStudio.ps1'); Compress-Archive -LiteralPath $files -DestinationPath '%~dp0Vbee-SRT-Studio-Windows-x64.zip' -CompressionLevel Optimal -Force"
 if errorlevel 1 exit /b %errorlevel%
 
 echo Portable app: %~dp0dist\win-x64\Vbee SRT Studio.exe
+echo PowerShell:   %~dp0dist\win-x64\VbeeSrtStudio.ps1
 echo ZIP package:  %~dp0Vbee-SRT-Studio-Windows-x64.zip
