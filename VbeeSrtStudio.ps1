@@ -153,6 +153,9 @@ function Get-VbeeErrorMessage {
     if (-not [string]::IsNullOrWhiteSpace($script:VbeeAppId)) {
         $message = $message.Replace($script:VbeeAppId, '[App ID]')
     }
+    if ($StatusCode -eq 400 -and $message.IndexOf('This feature is not supported in user package', [StringComparison]::OrdinalIgnoreCase) -ge 0) {
+        return 'Vbee từ chối yêu cầu TTS đồng bộ (mode=sync, HTTP 400). Lỗi này chưa đủ để kết luận App ID không dùng được mọi API TTS; hãy hỏi Vbee về quyền Realtime Sync hoặc giới hạn giọng/định dạng của ứng dụng. Script dừng, không tự gửi lại; Batch async cần webhook.'
+    }
     if ([string]::IsNullOrWhiteSpace($message)) {
         return "Vbee trả lỗi HTTP $StatusCode."
     }
@@ -573,6 +576,10 @@ Vbee
     $creditEstimate = Get-VbeeCreditEstimate -Cues $cues -CreditFactor 1.25
     if ($creditEstimate.Characters -ne 22 -or $creditEstimate.Points -ne 28) {
         throw 'Self-test thất bại: ước lượng điểm theo hệ số giọng.'
+    }
+    $packageError = Get-VbeeErrorMessage -StatusCode 400 -Body '{"error":{"message":"This feature is not supported in user package"}}'
+    if ($packageError -notmatch 'Realtime Sync' -or $packageError -notmatch 'không dùng được mọi API TTS') {
+        throw 'Self-test thất bại: chẩn đoán lỗi package không được làm người dùng hiểu rằng mọi API TTS đều bị khóa.'
     }
     $samples = ConvertFrom-VbeeWav -WavBytes (New-VbeeTestWav) -TargetSampleRate 44100
     if ($samples.Length -ne 4 -or $samples[0] -ne 1000 -or $samples[1] -ne -1000) {

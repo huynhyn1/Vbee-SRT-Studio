@@ -738,6 +738,12 @@ internal sealed class MainForm : Form
             message = body;
         }
 
+        if ((int)status == 400 &&
+            message.Contains("This feature is not supported in user package", StringComparison.OrdinalIgnoreCase))
+            return "Vbee từ chối yêu cầu TTS đồng bộ (mode=sync, HTTP 400): tính năng này không được hỗ trợ trong user package. " +
+                   "Lỗi này chưa đủ để kết luận App ID không dùng được mọi API TTS; tài liệu công khai không giải thích nguyên nhân cụ thể. " +
+                   "Hãy hỏi Vbee về quyền Realtime Sync hoặc giới hạn của giọng/định dạng cho ứng dụng này. " +
+                   "Ứng dụng đã dừng và không tự gửi lại; Batch async là luồng khác, cần webhook.";
         if (status == HttpStatusCode.Unauthorized)
             return "Vbee từ chối xác thực (401). Kiểm tra App ID và token trong Vbee Studio; token có thể hết hạn.";
         if (status == HttpStatusCode.Forbidden)
