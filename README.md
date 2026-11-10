@@ -20,7 +20,7 @@
 
 ## Dùng PowerShell thay thế
 
-Gói ZIP cũng kèm `VbeeSrtStudio.ps1`, không cần cài thêm module hay chương trình. Mở PowerShell trong thư mục đã giải nén rồi chạy lệnh thông thường:
+Gói ZIP có sẵn **`Chay Vbee SRT.bat`** để nhấp đúp chạy PowerShell script — không cần tự gõ lệnh. Có thể mở PowerShell trong thư mục đã giải nén và chạy trực tiếp `VbeeSrtStudio.ps1` nếu muốn truyền tham số:
 
 ```powershell
 powershell.exe -NoProfile -File .\VbeeSrtStudio.ps1
@@ -43,7 +43,7 @@ Có thể chạy kiểm tra offline (không gọi API, không cần credential):
 powershell.exe -NoProfile -File .\VbeeSrtStudio.ps1 -SelfTest
 ```
 
-Nếu Windows hoặc chính sách cơ quan chặn chạy script/ứng dụng, **không hạ hoặc bỏ qua cơ chế bảo vệ**; hãy dùng ứng dụng EXE nếu chính sách cho phép hoặc hỏi quản trị viên thiết bị.
+Tệp BAT chỉ gọi PowerShell theo chính sách hiện có; **không bỏ qua execution policy** và không thể mở khóa script nếu Windows hoặc chính sách cơ quan chặn chạy. Không hạ hoặc bỏ qua cơ chế bảo vệ; hãy dùng ứng dụng EXE nếu chính sách cho phép hoặc hỏi quản trị viên thiết bị.
 
 ## Định dạng và thời gian
 
