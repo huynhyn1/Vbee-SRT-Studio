@@ -5,7 +5,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>VbeeSrtStudio</AssemblyName>
+    <AssemblyName>Vbee SRT Studio</AssemblyName>
+    <AssemblyTitle>Vbee SRT Studio</AssemblyTitle>
+    <Product>Vbee SRT Studio</Product>
+    <Company>Vbee SRT Studio</Company>
+    <Version>1.0.0</Version>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <RootNamespace>VbeeSrtStudio</RootNamespace>
   </PropertyGroup>
 </Project>

@@ -1,35 +1,34 @@
 # Vbee SRT Studio
 
-Ứng dụng Windows portable để chuyển file phụ đề SRT thành một file WAV bằng API Vbee. Không cần cài .NET hoặc phần mềm bổ sung. Mã nguồn không chứa khóa API; App ID và token chỉ ở trong bộ nhớ của phiên ứng dụng, không được ghi xuống file.
+**Chuyển phụ đề SRT thành giọng nói Vbee — trực tiếp trên Windows, không cần cài đặt.**
 
-## Bắt đầu nhanh
+Ứng dụng portable, đóng gói cùng .NET nên không cần cài runtime. API của bạn, App ID và token chỉ được dùng trong ứng dụng; thông tin xác thực chỉ lưu trong bộ nhớ khi ứng dụng đang chạy, không ghi vào tệp.
 
-**Chỉ cần dùng ứng dụng?** Tải [VbeeSrtStudio-portable.zip](https://github.com/huynhyn1/Vbee-SRT-Studio/releases/latest/download/VbeeSrtStudio-portable.zip), giải nén vào một thư mục rồi nhấp đúp `START.bat`. Trong thư mục dự án đã build, cũng có thể nhấp đúp `START.bat` ở ngay đây.
+## Tải và mở ứng dụng
 
-Ứng dụng cần Internet và App ID/token từ [Vbee Studio](https://studio.vbee.vn/apps). Khi cửa sổ mở:
+1. Tải [Vbee SRT Studio cho Windows 64-bit](https://github.com/huynhyn1/Vbee-SRT-Studio/releases/latest/download/Vbee-SRT-Studio-Windows-x64.zip).
+2. Giải nén ZIP vào một thư mục.
+3. Mở thư mục vừa giải nén và **nhấp đúp `Vbee SRT Studio.exe`**. Không cần trình cài đặt.
 
-1. Nhập App ID và token, rồi bấm **Tải giọng đọc**.
-2. Chọn file SRT, giọng đọc, tốc độ và nơi lưu file WAV.
-3. Bấm **Tạo file WAV**. Có thể hủy khi đang xử lý.
+Ứng dụng cần Internet và App ID/token từ [Vbee Studio](https://studio.vbee.vn/apps).
 
-## Tự build trên Windows
+## Tạo tệp âm thanh
 
-Cần .NET 8 SDK. Mở Command Prompt hoặc PowerShell ở thư mục dự án và chạy:
+1. Nhập App ID và token, sau đó chọn **Tải danh sách giọng**.
+2. Chọn phụ đề SRT, giọng đọc, tốc độ và vị trí lưu WAV.
+3. Chọn **Tạo file WAV**. Tiến độ được hiển thị và có thể hủy khi đang xử lý.
 
-```text
-build.cmd
-```
+## Định dạng và thời gian
 
-Lệnh này tạo ứng dụng portable cùng launcher và README trong `dist\win-x64\`, đồng thời tạo `VbeeSrtStudio-portable.zip` ngay tại thư mục dự án. Có thể chạy kiểm tra nội bộ bằng:
+- Hỗ trợ SRT UTF-8, UTF-8 BOM, UTF-16 BOM và Windows-1258.
+- Xuất WAV PCM mono, 44,1 kHz; các khoảng lặng theo phụ đề được giữ.
+- Nếu lời đọc dài hơn khoảng phụ đề hoặc các câu bị chồng lấn, audio được nối liên tiếp thay vì cắt lời. Khi đó âm thanh không thể khớp chính xác với mọi mốc thời gian phụ đề.
+- Mỗi yêu cầu gửi tới API đồng bộ Vbee giới hạn 300 ký tự. Nếu gặp lỗi 401, kiểm tra App ID/token và thời hạn token.
+- Chọn **Xóa token** hoặc đóng ứng dụng để xóa thông tin khỏi phiên. Thu hồi token trong Vbee Studio để chấm dứt hiệu lực.
+- Tệp phát hành portable hiện chưa có chữ ký số Authenticode; Windows có thể hiện cảnh báo nhà phát hành khi mở lần đầu.
 
-```text
-dotnet run --project VbeeSrtStudio.csproj -- --self-test
-```
+## Build từ mã nguồn
 
-## Ghi chú
+Cần .NET 8 SDK trên Windows. Chạy `build.cmd`; tệp thực thi và hướng dẫn sẽ xuất hiện trong `dist\win-x64`, kèm gói ZIP trong thư mục dự án.
 
-- Dùng API đồng bộ `https://api.vbee.vn/v1/tts`, tối đa 300 ký tự mỗi yêu cầu; danh sách giọng lấy từ `https://vbee.vn/api/public/v1/voices`. Nếu Vbee trả 401, kiểm tra App ID/token và hạn sử dụng token.
-- Hỗ trợ SRT UTF-8/UTF-8 BOM, UTF-16 BOM và Windows-1258. Đầu ra WAV PCM mono 44,1 kHz.
-- Khoảng lặng theo mốc bắt đầu của phụ đề được giữ. Nếu một câu đọc dài hơn cửa sổ phụ đề hoặc chồng lấn câu kế tiếp, âm thanh không bị cắt mà được nối tiếp; vì vậy các mốc sau có thể trễ. Thời lượng đọc thực tế không thể khớp chính xác thời lượng phụ đề.
-- Token chỉ được giữ trong bộ nhớ khi ứng dụng đang chạy. Dùng **Xóa token** hoặc đóng ứng dụng để xóa token khỏi phiên; thu hồi token trong Vbee Studio để chấm dứt hiệu lực.
-- Mã nguồn build thành công, nhưng UI và API chưa được kiểm chứng trong môi trường build vì Windows Application Control đã chặn chạy assembly tự build.
+**Kiểm thử:** bản phát hành được build thành công. Giao diện và API chưa được kiểm tra trực tiếp trong môi trường build vì Windows Application Control đã chặn chạy assembly tự build.

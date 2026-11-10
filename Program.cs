@@ -31,14 +31,18 @@ internal sealed record Voice(string Name, string Code)
 internal sealed class MainForm : Form
 {
     private const int OutputSampleRate = 44100;
-    private readonly TextBox appIdBox = new() { PlaceholderText = "App ID từ Vbee Studio", Dock = DockStyle.Fill };
-    private readonly TextBox tokenBox = new() { PlaceholderText = "Token chỉ dùng trong phiên này", UseSystemPasswordChar = true, Dock = DockStyle.Fill };
-    private readonly Button loadVoicesButton = new() { Text = "Tải giọng đọc", AutoSize = true };
+    private static readonly System.Drawing.Color Ink = System.Drawing.Color.FromArgb(25, 39, 57);
+    private static readonly System.Drawing.Color Muted = System.Drawing.Color.FromArgb(103, 119, 139);
+    private static readonly System.Drawing.Color Accent = System.Drawing.Color.FromArgb(0, 157, 145);
+    private static readonly System.Drawing.Color Canvas = System.Drawing.Color.FromArgb(243, 246, 250);
+    private readonly TextBox appIdBox = new() { PlaceholderText = "Nhập App ID của bạn", Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle };
+    private readonly TextBox tokenBox = new() { PlaceholderText = "Dán token Vbee tại đây", UseSystemPasswordChar = true, Dock = DockStyle.Fill, BorderStyle = BorderStyle.FixedSingle };
+    private readonly Button loadVoicesButton = new() { Text = "Tải danh sách giọng", AutoSize = true };
     private readonly Button clearTokenButton = new() { Text = "Xóa token", AutoSize = true };
-    private readonly ComboBox voiceBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
-    private readonly Button loadSrtButton = new() { Text = "Chọn file SRT...", AutoSize = true };
-    private readonly Label srtLabel = new() { Text = "Chưa chọn file", AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
-    private readonly ListBox previewList = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true };
+    private readonly ComboBox voiceBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat };
+    private readonly Button loadSrtButton = new() { Text = "Mở phụ đề SRT", AutoSize = true };
+    private readonly Label srtLabel = new() { Text = "Chưa chọn tệp — hỗ trợ SRT, UTF-8 và tiếng Việt", AutoEllipsis = true, Dock = DockStyle.Fill, TextAlign = System.Drawing.ContentAlignment.MiddleLeft };
+    private readonly ListBox previewList = new() { Dock = DockStyle.Fill, HorizontalScrollbar = true, BorderStyle = BorderStyle.None, IntegralHeight = false };
     private readonly NumericUpDown speedBox = new()
     {
         Minimum = 0.25m,
@@ -66,11 +70,21 @@ internal sealed class MainForm : Form
     public MainForm()
     {
         Text = "Vbee SRT Studio";
-        Width = 900;
-        Height = 720;
-        MinimumSize = new System.Drawing.Size(720, 600);
+        Width = 980;
+        Height = 790;
+        MinimumSize = new System.Drawing.Size(820, 680);
         StartPosition = FormStartPosition.CenterScreen;
-        Font = new System.Drawing.Font("Segoe UI", 9F);
+        BackColor = Canvas;
+        ForeColor = Ink;
+        Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        AutoScaleMode = AutoScaleMode.Dpi;
+        appIdBox.Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        tokenBox.Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        outputBox.Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        previewList.Font = new System.Drawing.Font("Segoe UI", 9.5F);
+        previewList.BackColor = System.Drawing.Color.White;
+        statusLabel.ForeColor = Muted;
 
         BuildLayout();
         FormClosing += (_, _) => activeCancellation?.Cancel();
@@ -79,7 +93,7 @@ internal sealed class MainForm : Form
         clearTokenButton.Click += (_, _) =>
         {
             tokenBox.Clear();
-            statusLabel.Text = "Token đã xóa khỏi phiên ứng dụng.";
+            SetStatus("Token đã xóa khỏi phiên ứng dụng.");
             UpdateGenerateEnabled();
         };
         loadSrtButton.Click += (_, _) => ChooseSrt();
@@ -96,109 +110,255 @@ internal sealed class MainForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            Padding = new Padding(14),
+            Padding = new Padding(22),
             ColumnCount = 1,
-            RowCount = 5
+            RowCount = 6,
+            BackColor = Canvas
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 148));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 112));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 76));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 154));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 82));
         Controls.Add(root);
 
-        var credentials = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3 };
-        credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+        var header = new Panel { Dock = DockStyle.Fill, BackColor = Ink, Padding = new Padding(20, 10, 20, 10) };
+        var headerGrid = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, BackColor = Ink };
+        headerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        headerGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        headerGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 60));
+        headerGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 40));
+        headerGrid.Controls.Add(new Label
+        {
+            Text = "Vbee SRT Studio",
+            Dock = DockStyle.Fill,
+            ForeColor = System.Drawing.Color.White,
+            Font = new System.Drawing.Font("Segoe UI Semibold", 21F, System.Drawing.FontStyle.Bold),
+            TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+        }, 0, 0);
+        headerGrid.Controls.Add(new Label
+        {
+            Text = "Chuyển phụ đề thành giọng nói · nhanh gọn trên Windows",
+            Dock = DockStyle.Fill,
+            ForeColor = System.Drawing.Color.FromArgb(199, 212, 227),
+            Font = new System.Drawing.Font("Segoe UI", 9.5F),
+            TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+        }, 0, 1);
+        var badge = new Label
+        {
+            Text = "PORTABLE  ·  WINDOWS",
+            AutoSize = true,
+            ForeColor = System.Drawing.Color.White,
+            BackColor = Accent,
+            Font = new System.Drawing.Font("Segoe UI Semibold", 8.5F, System.Drawing.FontStyle.Bold),
+            Padding = new Padding(10, 7, 10, 7),
+            Anchor = AnchorStyles.Right
+        };
+        headerGrid.Controls.Add(badge, 1, 0);
+        headerGrid.SetRowSpan(badge, 2);
+        header.Controls.Add(headerGrid);
+        root.Controls.Add(header, 0, 0);
+
+        var credentials = CreateCard("01   KẾT NỐI VỚI VBEE");
+        credentials.ColumnCount = 3;
+        credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92));
         credentials.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         credentials.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        credentials.RowCount = 4;
+        credentials.RowStyles.Clear();
+        credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         credentials.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         credentials.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        AddField(credentials, 0, "App ID:", appIdBox);
-        AddField(credentials, 1, "Token:", tokenBox);
-        credentials.Controls.Add(loadVoicesButton, 2, 0);
-        credentials.Controls.Add(clearTokenButton, 2, 1);
+        credentials.SetColumnSpan(credentials.GetControlFromPosition(0, 0)!, 3);
+        AddField(credentials, 1, "App ID", appIdBox);
+        AddField(credentials, 2, "Token", tokenBox);
+        credentials.Controls.Add(loadVoicesButton, 2, 1);
+        credentials.Controls.Add(clearTokenButton, 2, 2);
         var privacy = new Label
         {
-            Text = "App ID/token chỉ giữ trong bộ nhớ phiên này; chỉ gửi tới máy chủ Vbee chính thức, không lưu vào file.",
+            Text = "Bảo mật: App ID và token chỉ dùng trong phiên này; không được lưu vào tệp.",
             Dock = DockStyle.Fill,
-            ForeColor = System.Drawing.Color.DimGray,
+            ForeColor = Muted,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         };
-        credentials.Controls.Add(privacy, 1, 2);
+        credentials.Controls.Add(privacy, 1, 3);
         credentials.SetColumnSpan(privacy, 2);
-        root.Controls.Add(credentials, 0, 0);
+        root.Controls.Add(credentials, 0, 1);
 
-        var srtRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
+        var srtRow = CreateCard("");
+        srtRow.Padding = new Padding(12);
+        srtRow.ColumnCount = 2;
+        srtRow.RowCount = 1;
+        srtRow.RowStyles.Clear();
+        srtRow.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         srtRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         srtRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         srtRow.Controls.Add(loadSrtButton, 0, 0);
         srtRow.Controls.Add(srtLabel, 1, 0);
-        root.Controls.Add(srtRow, 0, 1);
+        root.Controls.Add(srtRow, 0, 2);
 
-        var preview = new GroupBox { Text = "Phụ đề (hiển thị tối đa 2.000 dòng)", Dock = DockStyle.Fill, Padding = new Padding(8) };
-        preview.Controls.Add(previewList);
-        root.Controls.Add(preview, 0, 2);
+        var preview = CreateCard("02   NỘI DUNG PHỤ ĐỀ");
+        preview.ColumnCount = 2;
+        preview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        preview.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        preview.RowCount = 3;
+        preview.RowStyles.Clear();
+        preview.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        preview.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        preview.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        preview.SetColumnSpan(preview.GetControlFromPosition(0, 0)!, 2);
+        var previewHeader = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = System.Drawing.Color.White };
+        previewHeader.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        previewHeader.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        previewHeader.Controls.Add(new Label
+        {
+            Text = "Xem trước các câu thoại",
+            Dock = DockStyle.Fill,
+            ForeColor = Ink,
+            Font = new System.Drawing.Font("Segoe UI Semibold", 10F, System.Drawing.FontStyle.Bold),
+            TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+        }, 0, 0);
+        previewHeader.Controls.Add(new Label
+        {
+            Text = "Tối đa 2.000 dòng hiển thị",
+            Dock = DockStyle.Fill,
+            ForeColor = Muted,
+            TextAlign = System.Drawing.ContentAlignment.MiddleRight
+        }, 1, 0);
+        preview.Controls.Add(previewHeader, 0, 1);
+        preview.SetColumnSpan(previewHeader, 2);
+        preview.Controls.Add(previewList, 0, 2);
+        preview.SetColumnSpan(previewList, 2);
+        root.Controls.Add(preview, 0, 3);
 
-        var options = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3 };
-        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        var options = CreateCard("03   THIẾT LẬP ÂM THANH");
+        options.ColumnCount = 6;
+        options.RowCount = 4;
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-        options.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        var voiceFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, AutoSize = false };
-        voiceFlow.Controls.Add(new Label { Text = "Giọng:", AutoSize = true, Padding = new Padding(0, 7, 8, 0) });
-        voiceFlow.Controls.Add(voiceBox);
-        options.Controls.Add(voiceFlow, 0, 0);
-        var speedFlow = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false };
-        speedFlow.Controls.Add(new Label { Text = "Tốc độ:", AutoSize = true, Padding = new Padding(0, 7, 8, 0) });
-        speedFlow.Controls.Add(speedBox);
-        options.Controls.Add(speedFlow, 1, 0);
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        options.RowStyles.Clear();
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
+        options.SetColumnSpan(options.GetControlFromPosition(0, 0)!, 6);
+        AddField(options, 1, "Giọng", voiceBox);
+        AddField(options, 1, "Tốc độ", speedBox, 2);
         options.Controls.Add(new Label
         {
-            Text = "Đầu ra WAV:",
-            AutoSize = true,
-            Padding = new Padding(0, 7, 8, 0),
-            Anchor = AnchorStyles.Left
-        }, 0, 1);
-        options.Controls.Add(outputBox, 1, 1);
-        options.Controls.Add(outputButton, 2, 1);
+            Text = "Tệp WAV",
+            Dock = DockStyle.Fill,
+            ForeColor = Muted,
+            TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+        }, 0, 2);
+        options.Controls.Add(outputBox, 1, 2);
+        options.SetColumnSpan(outputBox, 4);
+        options.Controls.Add(outputButton, 5, 2);
         var timingNote = new Label
         {
-            Text = "Giữ khoảng lặng theo mốc SRT. Nếu lời đọc dài hơn khoảng phụ đề hoặc các câu chồng lấn, audio được nối liên tục, không cắt lời.",
+            Text = "Khoảng lặng theo SRT; câu đọc dài hoặc chồng lấn được nối tiếp, không cắt lời.",
             Dock = DockStyle.Fill,
-            ForeColor = System.Drawing.Color.DimGray,
+            ForeColor = Muted,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         };
-        options.Controls.Add(timingNote, 0, 2);
-        options.SetColumnSpan(timingNote, 3);
-        root.Controls.Add(options, 0, 3);
+        options.Controls.Add(timingNote, 0, 3);
+        options.SetColumnSpan(timingNote, 6);
+        root.Controls.Add(options, 0, 4);
 
-        var actions = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2 };
+        var actions = CreateCard("");
+        actions.Padding = new Padding(12);
+        actions.ColumnCount = 3;
+        actions.RowCount = 2;
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
+        actions.RowStyles.Clear();
+        actions.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
         actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         actions.Controls.Add(progressBar, 0, 0);
         actions.Controls.Add(generateButton, 1, 0);
         actions.Controls.Add(cancelButton, 2, 0);
         actions.Controls.Add(statusLabel, 0, 1);
         actions.SetColumnSpan(statusLabel, 3);
-        root.Controls.Add(actions, 0, 4);
+        root.Controls.Add(actions, 0, 5);
+
+        StyleButton(loadVoicesButton, false);
+        StyleButton(clearTokenButton, false);
+        StyleButton(loadSrtButton, true);
+        StyleButton(outputButton, false);
+        StyleButton(generateButton, true);
+        StyleButton(cancelButton, false);
+        progressBar.ForeColor = Accent;
+        progressBar.Margin = new Padding(0, 8, 14, 8);
+        AcceptButton = generateButton;
     }
 
-    private static void AddField(TableLayoutPanel table, int row, string labelText, Control field)
+    private static TableLayoutPanel CreateCard(string title)
     {
-        table.Controls.Add(new Label
+        var card = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = System.Drawing.Color.White,
+            Padding = new Padding(14),
+            ColumnCount = 1,
+            RowCount = title.Length > 0 ? 2 : 1,
+            Margin = new Padding(0, 0, 0, 8)
+        };
+        if (title.Length > 0)
+        {
+            card.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            card.Controls.Add(new Label
+            {
+                Text = title,
+                Dock = DockStyle.Fill,
+                ForeColor = Accent,
+                Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold),
+                TextAlign = System.Drawing.ContentAlignment.MiddleLeft
+            }, 0, 0);
+            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        }
+        else
+            card.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        return card;
+    }
+
+    private static void StyleButton(Button button, bool primary)
+    {
+        button.FlatStyle = FlatStyle.Flat;
+        button.FlatAppearance.BorderSize = primary ? 0 : 1;
+        button.FlatAppearance.BorderColor = System.Drawing.Color.FromArgb(211, 220, 230);
+        button.FlatAppearance.MouseOverBackColor = primary
+            ? System.Drawing.Color.FromArgb(0, 139, 128)
+            : System.Drawing.Color.FromArgb(245, 248, 251);
+        button.FlatAppearance.MouseDownBackColor = primary
+            ? System.Drawing.Color.FromArgb(0, 119, 110)
+            : System.Drawing.Color.FromArgb(234, 240, 246);
+        button.BackColor = primary ? Accent : System.Drawing.Color.White;
+        button.ForeColor = primary ? System.Drawing.Color.White : Ink;
+        button.Font = new System.Drawing.Font("Segoe UI Semibold", 9F, System.Drawing.FontStyle.Bold);
+        button.Padding = new Padding(12, 4, 12, 4);
+        button.Margin = new Padding(5, 3, 5, 3);
+        button.Cursor = Cursors.Hand;
+    }
+
+    private static void AddField(TableLayoutPanel table, int row, string labelText, Control field, int labelColumn = 0)
+    {
+        var label = new Label
         {
             Text = labelText,
             AutoSize = true,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft,
-            Dock = DockStyle.Fill
-        }, 0, row);
-        table.Controls.Add(field, 1, row);
+            Dock = DockStyle.Fill,
+            ForeColor = Muted
+        };
+        table.Controls.Add(label, labelColumn, row);
+        table.Controls.Add(field, labelColumn + 1, row);
     }
 
     private void ChooseSrt()
@@ -225,7 +385,7 @@ internal sealed class MainForm : Form
             previewList.EndUpdate();
             if (cues.Count > 2000)
                 previewList.Items.Add($"… còn {cues.Count - 2000:N0} đoạn");
-            statusLabel.Text = $"Đã tải {cues.Count:N0} đoạn phụ đề.";
+            SetStatus($"Đã tải {cues.Count:N0} đoạn phụ đề.", success: true);
             UpdateGenerateEnabled();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or DecoderFallbackException or FormatException)
@@ -234,7 +394,7 @@ internal sealed class MainForm : Form
             srtPath = null;
             srtLabel.Text = "Không đọc được file SRT";
             previewList.Items.Clear();
-            statusLabel.Text = "Lỗi đọc SRT: " + ex.Message;
+            SetStatus("Không đọc được file SRT: " + ex.Message, error: true);
             UpdateGenerateEnabled();
         }
     }
@@ -258,7 +418,7 @@ internal sealed class MainForm : Form
         if (!TryValidateCredentials())
             return;
         loadVoicesButton.Enabled = false;
-        statusLabel.Text = "Đang tải danh sách giọng đọc từ Vbee…";
+        SetStatus("Đang tải danh sách giọng đọc từ Vbee…");
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, "https://vbee.vn/api/public/v1/voices?languageCode=vi-VN");
@@ -278,12 +438,12 @@ internal sealed class MainForm : Form
                 voiceBox.Items.Add(voice);
             voiceBox.SelectedIndex = 0;
             voiceBox.EndUpdate();
-            statusLabel.Text = $"Đã tải {voices.Count} giọng đọc.";
+            SetStatus($"Đã tải {voices.Count} giọng đọc.", success: true);
             UpdateGenerateEnabled();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidDataException or VbeeApiException)
         {
-            statusLabel.Text = ex.Message;
+            SetStatus(FriendlyError(ex), error: true);
         }
         finally
         {
@@ -298,12 +458,12 @@ internal sealed class MainForm : Form
         var outputPath = outputBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(outputPath))
         {
-            statusLabel.Text = "Chọn nơi lưu file WAV.";
+            SetStatus("Chọn nơi lưu file WAV.", error: true);
             return;
         }
         if (string.Equals(Path.GetFullPath(outputPath), Path.GetFullPath(srtPath!), StringComparison.OrdinalIgnoreCase))
         {
-            statusLabel.Text = "File đầu ra không thể ghi đè lên SRT.";
+            SetStatus("File đầu ra không thể ghi đè lên SRT.", error: true);
             return;
         }
 
@@ -335,7 +495,7 @@ internal sealed class MainForm : Form
                     {
                         activeCancellation.Token.ThrowIfCancellationRequested();
                         currentChunk++;
-                        statusLabel.Text = $"Đang tạo: đoạn {cue.Index}/{cues.Count} ({currentChunk}/{totalChunks} phần)…";
+                        SetStatus($"Đang tạo: đoạn {cue.Index}/{cues.Count} ({currentChunk}/{totalChunks} phần)…");
                         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.vbee.vn/v1/tts");
                         AddAuthHeaders(request);
                         request.Content = JsonContent.Create(new
@@ -372,17 +532,18 @@ internal sealed class MainForm : Form
 
             File.Move(tempPath, outputPath, true);
             progressBar.Value = 100;
-            statusLabel.Text = delayedCueCount == 0
+            SetStatus(delayedCueCount == 0
                 ? $"Hoàn tất: {Path.GetFileName(outputPath)}. Khoảng lặng theo mốc SRT được giữ."
-                : $"Hoàn tất: {Path.GetFileName(outputPath)}. {delayedCueCount} đoạn chồng lấn/đọc dài đã được nối tiếp, không cắt audio.";
+                : $"Hoàn tất: {Path.GetFileName(outputPath)}. {delayedCueCount} đoạn chồng lấn/đọc dài đã được nối tiếp, không cắt audio.",
+                success: true);
         }
         catch (OperationCanceledException)
         {
-            statusLabel.Text = "Đã hủy tạo âm thanh.";
+            SetStatus("Đã hủy tạo âm thanh.");
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or VbeeApiException or UnauthorizedAccessException or ArgumentException)
         {
-            statusLabel.Text = ex.Message;
+            SetStatus(FriendlyError(ex), error: true);
         }
         finally
         {
@@ -406,19 +567,31 @@ internal sealed class MainForm : Form
     {
         if (string.IsNullOrWhiteSpace(appIdBox.Text) || string.IsNullOrWhiteSpace(tokenBox.Text))
         {
-            statusLabel.Text = "Nhập App ID và token trong Vbee Studio.";
+            SetStatus("Nhập App ID và token trong Vbee Studio.", error: true);
             return false;
         }
         return true;
     }
 
+    private void SetStatus(string message, bool error = false, bool success = false)
+    {
+        statusLabel.Text = message;
+        statusLabel.ForeColor = error
+            ? System.Drawing.Color.FromArgb(180, 52, 59)
+            : success ? System.Drawing.Color.FromArgb(0, 123, 108) : Muted;
+    }
+
+    private static string FriendlyError(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException
+            ? "Không thể kết nối tới Vbee. Kiểm tra kết nối Internet rồi thử lại."
+            : exception.Message;
+
     private void UpdateGenerateEnabled() =>
-        generateButton.Enabled = cues.Count > 0 && !string.IsNullOrWhiteSpace(appIdBox.Text) &&
+        generateButton.Enabled = activeCancellation is null && cues.Count > 0 && !string.IsNullOrWhiteSpace(appIdBox.Text) &&
                                  !string.IsNullOrWhiteSpace(tokenBox.Text) && voiceBox.SelectedItem is Voice;
 
     private void SetBusy(bool busy)
     {
-        generateButton.Enabled = !busy && cues.Count > 0 && voiceBox.SelectedItem is Voice;
         cancelButton.Enabled = busy;
         loadVoicesButton.Enabled = !busy;
         loadSrtButton.Enabled = !busy;
@@ -428,6 +601,7 @@ internal sealed class MainForm : Form
         voiceBox.Enabled = !busy;
         speedBox.Enabled = !busy;
         clearTokenButton.Enabled = !busy;
+        UpdateGenerateEnabled();
     }
 
     private string FormatApiError(HttpStatusCode status, string body)
