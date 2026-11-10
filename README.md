@@ -43,7 +43,7 @@ Có thể chạy kiểm tra offline (không gọi API, không cần credential):
 powershell.exe -NoProfile -File .\VbeeSrtStudio.ps1 -SelfTest
 ```
 
-Tệp BAT chỉ gọi PowerShell theo chính sách hiện có; **không bỏ qua execution policy** và không thể mở khóa script nếu Windows hoặc chính sách cơ quan chặn chạy. Không hạ hoặc bỏ qua cơ chế bảo vệ; hãy dùng ứng dụng EXE nếu chính sách cho phép hoặc hỏi quản trị viên thiết bị.
+Máy Windows hiện đã báo `running scripts is disabled` cho script này. Tệp BAT chỉ gọi PowerShell theo chính sách hiện có; **không bỏ qua execution policy**, nên trên máy đang chặn script, nhấp BAT vẫn không chạy được chức năng tạo audio. Không hạ hoặc bỏ qua cơ chế bảo vệ; hãy dùng ứng dụng EXE nếu chính sách cho phép hoặc hỏi quản trị viên về bản script đã ký/phương thức được phê duyệt.
 
 ## Định dạng và thời gian
 
