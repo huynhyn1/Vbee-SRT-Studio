@@ -34,6 +34,7 @@ powershell.exe -NoProfile -File .\VbeeSrtStudio.ps1 -SrtPath "C:\Audio\video.srt
 
 Script vẫn yêu cầu App ID/token, hiển thị danh sách ID giọng vừa tải và xác nhận ID đã chọn thuộc danh sách. Mỗi câu được gửi tuần tự qua API đồng bộ Vbee, chia phần tối đa 300 ký tự; khoảng lặng theo SRT được giữ. Câu đọc dài hoặc chồng lấn được nối tiếp chứ không cắt, nên khi đó không thể khớp chính xác toàn bộ mốc thời gian.
 Nhấn **Ctrl+C** trong cửa sổ PowerShell để dừng; tệp tạm sẽ được dọn khi script kết thúc.
+Trước khi gửi TTS, script hiện số ký tự thực gửi (sau chia đoạn, có tính dấu cách và dấu câu theo cách đếm của ứng dụng), ước tính điểm và hỏi trần cho lần chạy (mặc định 10.000 điểm). Nếu vượt trần sẽ yêu cầu xác nhận rõ ràng; chọn mặc định **N** sẽ dừng trước khi gửi TTS. Tài liệu Vbee mô tả `credit_factor` theo ký tự nhưng không nêu quy tắc tính riêng cho dấu cách/dấu câu, nên đây chỉ là ước tính.
 
 Không có endpoint số dư/hạn mức còn lại được công bố trong tài liệu API đã tham khảo. Kiểm tra điểm/hạn mức tại trang ứng dụng trong [Vbee Studio](https://studio.vbee.vn/apps); mỗi yêu cầu tổng hợp có thể tiêu hao credit và khi thiếu credit, Vbee sẽ trả lỗi cho yêu cầu. Script chỉ gửi App ID/token tới endpoint chính thức tải giọng `vbee.vn` và tổng hợp `api.vbee.vn`, không ghi credential vào tệp hay log.
 
@@ -52,6 +53,8 @@ Máy Windows hiện đã báo `running scripts is disabled` cho script này. T�
 - Nếu lời đọc dài hơn khoảng phụ đề hoặc các câu bị chồng lấn, audio được nối liên tiếp thay vì cắt lời. Khi đó âm thanh không thể khớp chính xác với mọi mốc thời gian phụ đề.
 - Mỗi yêu cầu gửi tới API đồng bộ Vbee giới hạn 300 ký tự. Nếu gặp lỗi 401, kiểm tra App ID/token và thời hạn token.
 - Danh sách giọng được lọc theo `voiceOwnership=VBEE` và `languageCode=vi-VN`, tự tải tiếp các trang theo con trỏ Vbee; mã giọng hiển thị ngay cạnh tên và có thể sao chép bằng nút **Sao chép ID**.
+- Trước mỗi lần tạo WAV, ứng dụng hiện số ký tự thực gửi sau chia đoạn (gồm dấu cách và dấu câu theo cách đếm của ứng dụng) và ước lượng điểm theo số ký tự × `credit_factor` của giọng; trần mặc định 10.000 điểm có thể chỉnh ngay trên giao diện và chỉ áp dụng cho lần chuyển đổi đó. Nếu ước lượng vượt trần, phải xác nhận mới tiếp tục; chọn **Không** thì chưa gửi yêu cầu TTS nào. Tài liệu Vbee không nêu riêng cách tính điểm cho dấu cách/dấu câu.
+- Đây chỉ là ước tính, không phải số dư hay giới hạn cứng phía Vbee: cách tính thực tế có thể khác và người dùng xác nhận vượt trần vẫn có thể tiêu thêm điểm. Ứng dụng không truy vấn số dư vì tài liệu API đã tham khảo không công bố endpoint số dư. Nếu Vbee không trả `credit_factor` cho giọng, ứng dụng không gửi TTS vì không thể ước lượng.
 - Chọn **Xóa token** hoặc đóng ứng dụng để xóa thông tin khỏi phiên. Thu hồi token trong Vbee Studio để chấm dứt hiệu lực.
 - Tệp phát hành portable hiện chưa có chữ ký số Authenticode; Windows có thể hiện cảnh báo nhà phát hành khi mở lần đầu.
 

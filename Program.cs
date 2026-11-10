@@ -23,7 +23,7 @@ internal static class Program
 }
 
 internal sealed record SubtitleCue(int Index, TimeSpan Start, TimeSpan End, string Text);
-internal sealed record Voice(string Name, string Code)
+internal sealed record Voice(string Name, string Code, decimal? CreditFactor)
 {
     public override string ToString() => $"{Name}  ·  {Code}";
 }
@@ -54,6 +54,22 @@ internal sealed class MainForm : Form
         DecimalPlaces = 2,
         Value = 1.00m,
         Width = 90
+    };
+    private readonly NumericUpDown creditCapBox = new()
+    {
+        Minimum = 1,
+        Maximum = 100000000,
+        Increment = 100,
+        Value = 10000,
+        DecimalPlaces = 0,
+        Width = 120
+    };
+    private readonly Label creditEstimateLabel = new()
+    {
+        Text = "Số ký tự gửi: —",
+        Dock = DockStyle.Fill,
+        ForeColor = Muted,
+        TextAlign = System.Drawing.ContentAlignment.MiddleLeft
     };
     private readonly TextBox outputBox = new() { ReadOnly = true, Dock = DockStyle.Fill };
     private readonly Button outputButton = new() { Text = "Lưu thành...", AutoSize = true };
@@ -106,6 +122,8 @@ internal sealed class MainForm : Form
         appIdBox.TextChanged += (_, _) => UpdateGenerateEnabled();
         tokenBox.TextChanged += (_, _) => UpdateGenerateEnabled();
         voiceBox.SelectedIndexChanged += (_, _) => UpdateGenerateEnabled();
+        voiceBox.SelectedIndexChanged += (_, _) => UpdateCreditEstimate();
+        creditCapBox.ValueChanged += (_, _) => UpdateCreditEstimate();
         voiceBox.SelectedIndexChanged += (_, _) => copyVoiceCodeButton.Enabled = voiceBox.SelectedItem is Voice;
         copyVoiceCodeButton.Click += (_, _) =>
         {
@@ -140,7 +158,7 @@ internal sealed class MainForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 162));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 66));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 250));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 162));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 206));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 116));
         scrollArea.Controls.Add(root);
         Controls.Add(scrollArea);
@@ -252,7 +270,7 @@ internal sealed class MainForm : Form
 
         var options = CreateCard("03   THIẾT LẬP ÂM THANH");
         options.ColumnCount = 5;
-        options.RowCount = 4;
+        options.RowCount = 5;
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
         options.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
@@ -262,6 +280,7 @@ internal sealed class MainForm : Form
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+        options.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));
         options.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
         options.SetColumnSpan(options.GetControlFromPosition(0, 0)!, 5);
         AddField(options, 1, "Giọng", voiceBox);
@@ -277,14 +296,17 @@ internal sealed class MainForm : Form
         options.Controls.Add(outputBox, 1, 2);
         options.SetColumnSpan(outputBox, 3);
         options.Controls.Add(outputButton, 4, 2);
+        AddField(options, 3, "Trần điểm/lần", creditCapBox);
+        options.Controls.Add(creditEstimateLabel, 2, 3);
+        options.SetColumnSpan(creditEstimateLabel, 3);
         var timingNote = new Label
         {
-            Text = "Khoảng lặng theo SRT; câu đọc dài hoặc chồng lấn được nối tiếp, không cắt lời.",
+            Text = "Đếm nội dung gửi gồm dấu cách/dấu câu; Vbee không nêu quy tắc tính riêng. Ước tính có thể khác; không đọc số dư.",
             Dock = DockStyle.Fill,
             ForeColor = Muted,
             TextAlign = System.Drawing.ContentAlignment.MiddleLeft
         };
-        options.Controls.Add(timingNote, 0, 3);
+        options.Controls.Add(timingNote, 0, 4);
         options.SetColumnSpan(timingNote, 5);
         root.Controls.Add(options, 0, 4);
 
@@ -399,11 +421,13 @@ internal sealed class MainForm : Form
             outputBox.Text = Path.Combine(Path.GetDirectoryName(dialog.FileName)!, Path.GetFileNameWithoutExtension(dialog.FileName) + "_voice.wav");
             previewList.BeginUpdate();
             previewList.Items.Clear();
+            UpdateCreditEstimate();
             foreach (var cue in cues.Take(2000))
                 previewList.Items.Add($"{cue.Index}  {cue.Start:hh\\:mm\\:ss\\.fff}  {cue.Text}");
             previewList.EndUpdate();
             if (cues.Count > 2000)
                 previewList.Items.Add($"… còn {cues.Count - 2000:N0} đoạn");
+            UpdateCreditEstimate();
             SetStatus($"Đã tải {cues.Count:N0} đoạn phụ đề.", success: true);
             UpdateGenerateEnabled();
         }
@@ -478,6 +502,7 @@ internal sealed class MainForm : Form
             voiceBox.EndUpdate();
             SetStatus($"Đã tải {voices.Count} giọng đọc.", success: true);
             UpdateGenerateEnabled();
+            UpdateCreditEstimate();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or InvalidDataException or VbeeApiException)
         {
@@ -497,6 +522,32 @@ internal sealed class MainForm : Form
     {
         if (cues.Count == 0 || !TryValidateCredentials() || voiceBox.SelectedItem is not Voice voice)
             return;
+        if (voice.CreditFactor is null)
+        {
+            SetStatus("Vbee không trả hệ số tiêu hao cho giọng này; không thể ước lượng điểm nên chưa gửi yêu cầu.", error: true);
+            return;
+        }
+
+        var estimate = CreditEstimator.Estimate(cues, voice.CreditFactor.Value);
+        if (estimate.Points > creditCapBox.Value)
+        {
+            var answer = MessageBox.Show(this,
+                $"Lần chuyển đổi này ước tính dùng khoảng {estimate.Points:N0} điểm " +
+                $"({estimate.SubmittedCharacters:N0} ký tự × hệ số {voice.CreditFactor.Value:0.####}), " +
+                $"vượt trần {creditCapBox.Value:N0} điểm/lần.\r\n\r\n" +
+                "Đây chỉ là ước tính; điểm Vbee thực tế có thể khác. Chưa có yêu cầu tổng hợp nào được gửi. " +
+                "Bạn có muốn tiếp tục và cho phép lần chuyển đổi này vượt trần không?",
+                "Xác nhận vượt trần điểm",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (answer != DialogResult.Yes)
+            {
+                SetStatus("Đã dừng trước khi gửi yêu cầu TTS vì ước tính vượt trần điểm.");
+                return;
+            }
+        }
+
         var outputPath = outputBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(outputPath))
         {
@@ -630,7 +681,8 @@ internal sealed class MainForm : Form
 
     private void UpdateGenerateEnabled() =>
         generateButton.Enabled = activeCancellation is null && cues.Count > 0 && !string.IsNullOrWhiteSpace(appIdBox.Text) &&
-                                 !string.IsNullOrWhiteSpace(tokenBox.Text) && voiceBox.SelectedItem is Voice;
+                                 !string.IsNullOrWhiteSpace(tokenBox.Text) &&
+                                 voiceBox.SelectedItem is Voice { CreditFactor: not null };
 
     private void SetBusy(bool busy)
     {
@@ -642,9 +694,31 @@ internal sealed class MainForm : Form
         tokenBox.Enabled = !busy;
         voiceBox.Enabled = !busy;
         speedBox.Enabled = !busy;
+        creditCapBox.Enabled = !busy;
         clearTokenButton.Enabled = !busy;
         copyVoiceCodeButton.Enabled = !busy && voiceBox.SelectedItem is Voice;
         UpdateGenerateEnabled();
+    }
+
+    private void UpdateCreditEstimate()
+    {
+        if (cues.Count == 0)
+        {
+            creditEstimateLabel.Text = "Số ký tự gửi: —";
+            return;
+        }
+
+        var characters = CreditEstimator.CountSubmittedCharacters(cues);
+        if (voiceBox.SelectedItem is not Voice { CreditFactor: not null } voice)
+        {
+            creditEstimateLabel.Text = voiceBox.SelectedItem is Voice
+                ? $"{characters:N0} ký tự gửi · Vbee không trả hệ số giọng"
+                : $"{characters:N0} ký tự gửi · chọn giọng để ước tính điểm";
+            return;
+        }
+
+        var estimate = CreditEstimator.Estimate(cues, voice.CreditFactor.Value);
+        creditEstimateLabel.Text = $"{estimate.SubmittedCharacters:N0} ký tự gửi · ~{estimate.Points:N0} điểm · hệ số {voice.CreditFactor.Value:0.####}";
     }
 
     private string FormatApiError(HttpStatusCode status, string body)
@@ -800,6 +874,35 @@ internal static class TextChunker
     }
 }
 
+internal sealed record CreditEstimate(long SubmittedCharacters, decimal Points);
+
+internal static class CreditEstimator
+{
+    public static long CountSubmittedCharacters(IEnumerable<SubtitleCue> cues)
+    {
+        long characterCount = 0;
+        foreach (var cue in cues)
+        {
+            foreach (var chunk in TextChunker.Split(cue.Text))
+            {
+                var elements = StringInfo.GetTextElementEnumerator(chunk);
+                while (elements.MoveNext())
+                    characterCount++;
+            }
+        }
+        return characterCount;
+    }
+
+    public static CreditEstimate Estimate(IEnumerable<SubtitleCue> cues, decimal creditFactor)
+    {
+        if (creditFactor < 0)
+            throw new ArgumentOutOfRangeException(nameof(creditFactor), "Vbee credit_factor cannot be negative.");
+
+        var characterCount = CountSubmittedCharacters(cues);
+        return new CreditEstimate(characterCount, decimal.Ceiling(characterCount * creditFactor));
+    }
+}
+
 internal static class VoiceParser
 {
     private static readonly string[] ArrayNames = ["voices", "voiceList", "items", "list", "records"];
@@ -822,7 +925,11 @@ internal static class VoiceParser
             if (!TryGetString(item, CodeNames, out var code))
                 continue;
             var name = TryGetString(item, NameNames, out var parsedName) ? parsedName : code;
-            parsed.Add(new Voice(name, code));
+            var creditFactor = TryGetDecimal(item, "credit_factor", out var factor) ||
+                               TryGetDecimal(item, "creditFactor", out factor)
+                ? factor
+                : (decimal?)null;
+            parsed.Add(new Voice(name, code, creditFactor));
         }
         var sorted = parsed.OrderBy(voice => voice.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         var hasNextPage = false;
@@ -898,6 +1005,17 @@ internal static class VoiceParser
         }
         value = "";
         return false;
+    }
+
+    private static bool TryGetDecimal(JsonElement element, string propertyName, out decimal value)
+    {
+        value = 0;
+        if (!TryGet(element, propertyName, out var property))
+            return false;
+        if (property.ValueKind == JsonValueKind.Number)
+            return property.TryGetDecimal(out value);
+        return property.ValueKind == JsonValueKind.String &&
+               decimal.TryParse(property.GetString(), NumberStyles.Number, CultureInfo.InvariantCulture, out value);
     }
 
     public static bool TryGet(JsonElement element, string propertyName, out JsonElement value)
@@ -1071,11 +1189,14 @@ internal static class SelfTests
         {
             var cues = SrtParser.Parse("1\r\n00:00:02,000 --> 00:00:03,250\r\n<i>Xin chào</i>\r\n\r\n2\r\n00:00:05.000 --> 00:00:06.000\r\nVbee\r\n");
             Assert(cues.Count == 2 && cues[0].Text == "Xin chào" && cues[1].Start == TimeSpan.FromSeconds(5), "SRT parse and timing");
-            var voices = VoiceParser.Parse("{\"result\":{\"voices\":[{\"voiceCode\":\"hn_female_001\",\"voiceName\":\"Giọng Hà Nội\"},{\"code\":\"sg_female_002\",\"name\":\"Giọng Sài Gòn\"}]}}");
+            var voices = VoiceParser.Parse("{\"result\":{\"voices\":[{\"voiceCode\":\"hn_female_001\",\"voiceName\":\"Giọng Hà Nội\",\"credit_factor\":1.25},{\"code\":\"sg_female_002\",\"name\":\"Giọng Sài Gòn\",\"credit_factor\":1}]}}");
             Assert(voices.Count == 2 && voices.Any(voice => voice.Name == "Giọng Hà Nội" && voice.Code == "hn_female_001"),
                 "Vbee voice IDs and nested catalog shape");
+            Assert(voices.Single(voice => voice.Code == "hn_female_001").CreditFactor == 1.25m,
+                "Voice credit factor parsing");
             Assert(VoiceParser.Parse("{\"data\":{\"items\":[{\"id\":\"v2\",\"displayName\":\"Giọng 2\"}]}}")
-                .Single().ToString() == "Giọng 2  ·  v2", "Voice ID display");
+                .Single() is { } parsedVoice && parsedVoice.ToString() == "Giọng 2  ·  v2" && parsedVoice.CreditFactor is null,
+                "Voice ID display and missing credit factor");
             var voicePage = VoiceParser.ParsePage("{\"result\":{\"pagination\":{\"has_next_page\":true,\"next_cursor\":\"next-page\"},\"voices\":[{\"code\":\"v3\",\"name\":\"Giọng trang sau\"}]}}");
             Assert(voicePage.HasNextPage && voicePage.NextCursor == "next-page" && voicePage.Voices.Single().Code == "v3",
                 "Vbee cursor pagination");
@@ -1085,6 +1206,11 @@ internal static class SelfTests
             catch (JsonException) { malformedVoiceJsonRejected = true; }
             Assert(malformedVoiceJsonRejected, "Malformed voice catalog JSON");
             Assert(TextChunker.Split(new string('a', 301)).Select(s => s.Length).SequenceEqual(new[] { 300, 1 }), "300-character chunking");
+            var estimate = CreditEstimator.Estimate(
+                [new SubtitleCue(1, TimeSpan.Zero, TimeSpan.FromSeconds(1), "Xin chào"), new SubtitleCue(2, TimeSpan.Zero, TimeSpan.FromSeconds(1), "Vbee!")],
+                1.25m);
+            Assert(estimate.SubmittedCharacters == 13 && estimate.Points == 17,
+                "Per-conversion credit estimate uses submitted characters and rounds up");
             var wav = CreateSampleWav();
             var samples = WavReader.ReadMonoPcm16(wav, 8000);
             Assert(samples.Length == 4 && samples[0] == 1000 && samples[3] == -1000, "WAV PCM parsing");
@@ -1093,7 +1219,7 @@ internal static class SelfTests
             WavWriter.WriteSamples(output, samples);
             WavWriter.WriteHeader(output, 8000, samples.Length);
             Assert(output.Length == 44 + samples.Length * 2, "WAV writer header");
-            Console.WriteLine("Self-tests passed: SRT parsing, voice catalog parsing/ID display, chunking, WAV parsing/writing.");
+            Console.WriteLine("Self-tests passed: SRT parsing, voice catalog parsing/ID display, credit estimates, chunking, WAV parsing/writing.");
             return 0;
         }
         catch (Exception ex)

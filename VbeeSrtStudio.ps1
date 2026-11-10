@@ -241,7 +241,15 @@ function ConvertFrom-VbeeVoicePage {
         if (-not [string]::IsNullOrWhiteSpace([string]$voice.code)) {
             $name = [string]$voice.name
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$voice.code }
-            $voices.Add([pscustomobject]@{ Name = $name; Code = [string]$voice.code })
+            $factor = $null
+            if ($null -ne $voice.credit_factor) {
+                $parsedFactor = [decimal]0
+                if ([decimal]::TryParse([string]$voice.credit_factor, [Globalization.NumberStyles]::Number,
+                        [Globalization.CultureInfo]::InvariantCulture, [ref]$parsedFactor) -and $parsedFactor -ge 0) {
+                    $factor = $parsedFactor
+                }
+            }
+            $voices.Add([pscustomobject]@{ Name = $name; Code = [string]$voice.code; CreditFactor = $factor })
         }
     }
     $pagination = $result.pagination
@@ -272,6 +280,24 @@ function Select-VbeeVoice {
             return [string]$Voices[$number - 1].Code
         }
         Write-Host "Nhập số từ 1 đến $($Voices.Count)." -ForegroundColor Yellow
+    }
+}
+
+function Get-VbeeCreditEstimate {
+    param(
+        [Parameter(Mandatory = $true)][object[]]$Cues,
+        [Parameter(Mandatory = $true)][decimal]$CreditFactor
+    )
+    $characterCount = [long]0
+    foreach ($cue in $Cues) {
+        foreach ($chunk in (Split-VbeeText -Text $cue.Text)) {
+            $elements = [Globalization.StringInfo]::GetTextElementEnumerator($chunk)
+            while ($elements.MoveNext()) { $characterCount++ }
+        }
+    }
+    return [pscustomobject]@{
+        Characters = $characterCount
+        Points = [decimal][Math]::Ceiling($characterCount * $CreditFactor)
     }
 }
 
@@ -538,10 +564,15 @@ Vbee
     if ($chunks.Count -ne 2 -or $chunks[0].Length -ne 300 -or $chunks[1].Length -ne 1) {
         throw 'Self-test thất bại: chia giới hạn 300 ký tự.'
     }
-    $voicePage = ConvertFrom-VbeeVoicePage -Json '{"result":{"pagination":{"has_next_page":true,"next_cursor":"cursor-2"},"voices":[{"code":"hn_female_001","name":"Giọng Hà Nội"}]}}'
+    $voicePage = ConvertFrom-VbeeVoicePage -Json '{"result":{"pagination":{"has_next_page":true,"next_cursor":"cursor-2"},"voices":[{"code":"hn_female_001","name":"Giọng Hà Nội","credit_factor":1.25}]}}'
     if (-not $voicePage.HasNextPage -or $voicePage.NextCursor -ne 'cursor-2' -or
-        $voicePage.Voices.Count -ne 1 -or $voicePage.Voices[0].Code -ne 'hn_female_001') {
-        throw 'Self-test thất bại: đọc tên/ID và phân trang danh sách giọng.'
+        $voicePage.Voices.Count -ne 1 -or $voicePage.Voices[0].Code -ne 'hn_female_001' -or
+        $voicePage.Voices[0].CreditFactor -ne 1.25) {
+        throw 'Self-test thất bại: đọc tên/ID, hệ số và phân trang danh sách giọng.'
+    }
+    $creditEstimate = Get-VbeeCreditEstimate -Cues $cues -CreditFactor 1.25
+    if ($creditEstimate.Characters -ne 22 -or $creditEstimate.Points -ne 28) {
+        throw 'Self-test thất bại: ước lượng điểm theo hệ số giọng.'
     }
     $samples = ConvertFrom-VbeeWav -WavBytes (New-VbeeTestWav) -TargetSampleRate 44100
     if ($samples.Length -ne 4 -or $samples[0] -ne 1000 -or $samples[1] -ne -1000) {
@@ -566,7 +597,7 @@ Vbee
         $composed[2] -ne 0 -or $composed[3] -ne 0 -or $composed[4] -ne 2000) {
         throw 'Self-test thất bại: ghép audio và khoảng lặng.'
     }
-    Write-Host 'Self-test passed: SRT UTF-8/HTML, voice IDs/pagination, 300-character chunking, WAV decoding and silence composition.'
+    Write-Host 'Self-test passed: SRT UTF-8/HTML, voice IDs/pagination/credit factor, credit estimate, 300-character chunking, WAV decoding and silence composition.'
 }
 
 if ($SelfTest) {
@@ -619,8 +650,31 @@ try {
     if ([string]::IsNullOrWhiteSpace($VoiceCode)) {
         $VoiceCode = Select-VbeeVoice -Voices $voices
     }
-    elseif (-not ($voices | Where-Object { $_.Code -eq $VoiceCode })) {
+    $selectedVoice = $voices | Where-Object { $_.Code -eq $VoiceCode } | Select-Object -First 1
+    if ($null -eq $selectedVoice) {
         throw "ID giọng '$VoiceCode' không có trong danh sách Vbee vừa tải. Chạy lại và chọn từ danh sách hiển thị."
+    }
+    if ($null -eq $selectedVoice.CreditFactor) {
+        throw 'Vbee không trả hệ số tiêu hao cho giọng này; không thể ước lượng điểm nên chưa gửi yêu cầu.'
+    }
+
+    $creditCap = [decimal]10000
+    $creditCapText = Read-Host 'Trần ước tính điểm/lần (Enter = 10000)'
+    if (-not [string]::IsNullOrWhiteSpace($creditCapText)) {
+        $culture = [Globalization.CultureInfo]::InvariantCulture
+        if (-not [decimal]::TryParse($creditCapText, [Globalization.NumberStyles]::Number, $culture, [ref]$creditCap) -or $creditCap -lt 1) {
+            throw 'Trần điểm phải là số lớn hơn 0.'
+        }
+    }
+    $creditEstimate = Get-VbeeCreditEstimate -Cues $cues -CreditFactor $selectedVoice.CreditFactor
+    Write-Host ("Ước tính lần này: khoảng {0:N0} điểm ({1:N0} ký tự gửi, gồm dấu cách/dấu câu × hệ số {2}); trần {3:N0} điểm." -f
+        $creditEstimate.Points, $creditEstimate.Characters, $selectedVoice.CreditFactor, $creditCap)
+    if ($creditEstimate.Points -gt $creditCap) {
+        Write-Warning 'Ước tính vượt trần. Đây không phải số dư; điểm thực tế có thể khác và tài liệu API không công bố endpoint số dư.'
+        $continue = Read-Host 'Chưa gửi TTS. Cho phép lần chuyển đổi này vượt trần? (y/N)'
+        if ($continue -notmatch '^(y|yes)$') {
+            throw 'Đã dừng trước khi gửi yêu cầu TTS vì ước tính vượt trần điểm.'
+        }
     }
     $speed = [decimal]1.0
     $speedText = Read-Host 'Tốc độ đọc (0.25-1.9, Enter để dùng 1.0)'
